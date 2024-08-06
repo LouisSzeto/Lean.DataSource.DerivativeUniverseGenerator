@@ -28,6 +28,7 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
         private const string _deltaHeader = "delta";
         private const string _sidHeader = "#symbol_id";
         private const string _tickerHeader = "symbol_value";
+        private const string _priceHeader = "close";
         private Dictionary<string, Dictionary<DateTime, decimal>> _iv30s = new();
 
         public OptionAdditionalFieldGenerator(DateTime processingDate, string rootPath)
@@ -53,6 +54,8 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                         return false;
                     }
 
+                    CleanIV(dateFile);
+
                     var ivs = GetIvs(_processingDate, subFolder);
                     var additionalFields = new OptionAdditionalFields();
                     additionalFields.Update(ivs);
@@ -67,6 +70,70 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                 return false;
             }
             return true;
+        }
+
+        private void CleanIV(string csvPath)
+        {
+            var lines = File.ReadAllLines(csvPath)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+            var headers = lines[0].Split(',');
+            var ivIndex = Array.IndexOf(headers, _impliedVolHeader);
+            var sidIndex = Array.IndexOf(headers, _sidHeader);
+            var tickerIndex = Array.IndexOf(headers, _tickerHeader);
+            var priceIndex = Array.IndexOf(headers, _priceHeader);
+
+            if (ivIndex == -1 || sidIndex == -1 || tickerIndex == -1 || priceIndex == -1)
+            {
+                return;
+            }
+
+            var underlyingClose = decimal.Parse(lines[1].Split(',')[priceIndex]);
+            // Skip underlying row
+            var data = lines.Skip(2)
+                .Select(line =>
+                {
+                    var values = line.Split(',');
+                    var symbol = new Symbol(SecurityIdentifier.Parse(values[sidIndex]), values[tickerIndex]);
+                    var iv = decimal.Parse(values[ivIndex]);
+
+                    return (Symbol: symbol, ImpliedVolatility: iv);
+                })
+                .ToList();
+
+            var filtered = data.Where(x => x.ImpliedVolatility != 0m).ToList();
+            var symbols = filtered.Select(x => x.Symbol).ToList();
+            var ivs = filtered.Select(x => x.ImpliedVolatility).ToList();
+            
+            var cubicSpline = new IvCubicSplineInterpolation(underlyingClose, _processingDate, symbols, ivs);
+
+            using (var writer = new StreamWriter(csvPath))
+            {
+                int count = 0;
+
+                foreach (var row in lines)
+                {
+                    var items = row.Split(',').ToList();
+
+                    if (count >= 2 && decimal.Parse(items[ivIndex]) == 0m)
+                    {
+                        var symbol = new Symbol(SecurityIdentifier.Parse(items[sidIndex]), items[tickerIndex]);
+                        var newIv = Convert.ToDecimal(cubicSpline.GetInterpolatedIv(symbol.ID.StrikePrice, symbol.ID.Date));
+                        items[ivIndex] = $"{newIv}";
+
+                        var greeks = cubicSpline.GetUpdatedGreeks(symbol, newIv);
+                        items[ivIndex + 1] = $"{greeks.Delta}";
+                        items[ivIndex + 2] = $"{greeks.Gamma}";
+                        items[ivIndex + 3] = $"{greeks.Vega}";
+                        items[ivIndex + 4] = $"{greeks.Theta}";
+                        items[ivIndex + 5] = $"{greeks.Rho}";
+                    }
+
+                    writer.WriteLine(string.Join(',', items));
+
+                    count++;
+                }
+            }
         }
 
         private List<decimal> GetIvs(DateTime currentDateTime, string path)

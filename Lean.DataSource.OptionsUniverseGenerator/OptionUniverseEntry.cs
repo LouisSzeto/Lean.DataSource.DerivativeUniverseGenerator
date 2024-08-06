@@ -94,7 +94,7 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
         /// <summary>
         /// Helper class that holds and updates the greeks indicators
         /// </summary>
-        private class GreeksIndicators
+        public class GreeksIndicators
         {
             private readonly static IRiskFreeInterestRateModel _interestRateProvider = new InterestRateProvider();
 
