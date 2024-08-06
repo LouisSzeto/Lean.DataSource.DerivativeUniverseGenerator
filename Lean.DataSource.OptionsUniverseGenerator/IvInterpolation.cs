@@ -32,7 +32,7 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
         public IvInterpolation(decimal underlyingPrice, DateTime currentDate, IEnumerable<(Symbol Symbol, decimal ImpliedVolatility)> data)
         {
             _underlyingPrice = underlyingPrice;
-            _currentDate = currentDate.AddDays(-1);
+            _currentDate = currentDate;
 
             var inputs = data.Select(x => GetInput(x.Symbol.ID.StrikePrice, x.Symbol.ID.Date, x.ImpliedVolatility)).ToArray();
             var outputs = data.Select(x => (double)x.ImpliedVolatility).ToArray();
