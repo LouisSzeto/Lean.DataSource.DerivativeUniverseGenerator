@@ -16,58 +16,78 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using MathNet.Numerics.Interpolation;
-using static QuantConnect.DataSource.OptionsUniverseGenerator.OptionUniverseEntry;
 using QuantConnect.Indicators;
-using QuantConnect.Data;
 using QuantConnect.Data.Market;
+using Accord.Statistics.Models.Regression.Linear;
+using MathNet.Numerics.RootFinding;
 
 namespace QuantConnect.DataSource.OptionsUniverseGenerator
 {
-    public class IvCubicSplineInterpolation
+    public class IvInterpolation
     {
-        private readonly static IRiskFreeInterestRateModel _interestRateProvider = new InterestRateProvider();
         private decimal _underlyingPrice;
         private DateTime _currentDate;
-        private CubicSpline _cubicSpline;
+        private MultipleLinearRegression _model;
 
-        public IvCubicSplineInterpolation(decimal underlyingPrice, DateTime currentDate, IEnumerable<Symbol> symbols, IEnumerable<decimal> ivs)
+        public IvInterpolation(decimal underlyingPrice, DateTime currentDate, IEnumerable<(Symbol Symbol, decimal ImpliedVolatility)> data)
         {
             _underlyingPrice = underlyingPrice;
-            _currentDate = currentDate;
+            _currentDate = currentDate.AddDays(-1);
 
-            var moneynesses = symbols.Select(x => GetMoneyness(x.ID.StrikePrice, x.ID.Date)).ToArray();
-            var ivDoubles = ivs.Select(x => (double)x).ToArray();
-            _cubicSpline = CubicSpline.InterpolateAkimaSorted(moneynesses, ivDoubles);
+            var inputs = data.Select(x => GetInput(x.Symbol.ID.StrikePrice, x.Symbol.ID.Date, x.ImpliedVolatility)).ToArray();
+            var outputs = data.Select(x => (double)x.ImpliedVolatility).ToArray();
+
+            var ols = new OrdinaryLeastSquares()
+            {
+                UseIntercept = true
+            };
+            _model = ols.Learn(inputs, outputs);
         }
 
-        private double GetMoneyness(decimal strike, DateTime expiry)
+        private double[] GetInput(decimal strike, DateTime expiry, decimal iv)
+        {
+            var moneyness = GetMoneyness(strike, expiry, iv);
+            var ttm = GetTimeTillMaturity(expiry);
+            return new double[]
+            {
+                moneyness,
+                ttm,
+                moneyness * moneyness,
+                ttm * ttm,
+                ttm * moneyness
+            };
+        }
+
+        private double GetMoneyness(decimal strike, DateTime expiry, decimal iv)
         {
             var ttm = GetTimeTillMaturity(expiry);
-            return Math.Log((double)(_underlyingPrice / strike)) / Math.Sqrt(ttm);
+            return Math.Log((double)(strike / _underlyingPrice)) / (double)iv / Math.Sqrt(ttm);
         }
 
         private double GetTimeTillMaturity(DateTime expiry)
         {
-            return (expiry - _currentDate).TotalDays;
+            return (expiry - _currentDate).TotalDays / 365d;
         }
 
         public decimal GetInterpolatedIv(decimal strike, DateTime expiry)
         {
-            var moneyness = GetMoneyness(strike, expiry);
-            var iv = _cubicSpline.Interpolate(moneyness);
-            return Convert.ToDecimal(iv);
+            Func<double, double> f = (vol) =>
+            {
+                var input = GetInput(strike, expiry, Convert.ToDecimal(vol));
+                var iv = _model.Transform(input);
+                return vol - iv;
+            };
+            return Convert.ToDecimal(Brent.FindRoot(f, 1e-7d, 4.0d, 1e-4d, 100));
         }
 
         public Greeks GetUpdatedGreeks(Symbol option, decimal polatedIv)
         {
             var mirrorOption = OptionsUniverseGeneratorUtils.GetMirrorOptionSymbol(option);
-            var greeks = new GreeksIndicators(option, mirrorOption);
+            var greeks = new OptionUniverseEntry.GreeksIndicators(option, mirrorOption);
 
-            var dividendYieldModel = DividendYieldProvider.CreateForOption(option);
             var ttm = Convert.ToDecimal((option.ID.Date - _currentDate).TotalDays / 365d);
-            var interest = _interestRateProvider.GetInterestRate(_currentDate);
-            var dividend = dividendYieldModel.GetDividendYield(_currentDate);
+            var interest = greeks.InterestRate;
+            var dividend = greeks.DividendYield;
 
             var optionPrice = 0m;
             var mirrorOptionPrice = 0m;

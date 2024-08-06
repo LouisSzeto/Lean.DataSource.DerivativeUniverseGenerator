@@ -137,6 +137,10 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
             }
 
             public decimal ImpliedVolatility => _delta.ImpliedVolatility;
+
+            public decimal InterestRate => _delta.RiskFreeRate;
+
+            public decimal DividendYield => _delta.DividendYield;
         }
 
         /// <summary>

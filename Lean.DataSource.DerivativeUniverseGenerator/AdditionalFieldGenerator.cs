@@ -13,7 +13,10 @@
  * limitations under the License.
 */
 
+using QuantConnect.Configuration;
+using QuantConnect.Interfaces;
 using QuantConnect.Logging;
+using QuantConnect.Util;
 using System;
 using System.IO;
 using System.Linq;
@@ -37,6 +40,13 @@ namespace QuantConnect.DataSource.DerivativeUniverseGenerator
         {
             _processingDate = processingDate;
             _rootPath = rootPath;
+
+            var dataProvider = Composer.Instance.GetExportedValueByTypeName<IDataProvider>(Config.Get("data-provider", "DefaultDataProvider"));
+            var mapFileProvider = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalZipMapFileProvider"));
+            mapFileProvider.Initialize(dataProvider);
+
+            var factorFileProvider = Composer.Instance.GetExportedValueByTypeName<IFactorFileProvider>(Config.Get("factor-file-provider", "LocalZipFactorFileProvider"));
+            factorFileProvider.Initialize(mapFileProvider, dataProvider);
         }
 
         /// <summary>

@@ -98,14 +98,9 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                     var iv = decimal.Parse(values[ivIndex]);
 
                     return (Symbol: symbol, ImpliedVolatility: iv);
-                })
+                }).Where(x => x.ImpliedVolatility > 0m)
                 .ToList();
-
-            var filtered = data.Where(x => x.ImpliedVolatility != 0m).ToList();
-            var symbols = filtered.Select(x => x.Symbol).ToList();
-            var ivs = filtered.Select(x => x.ImpliedVolatility).ToList();
-            
-            var cubicSpline = new IvCubicSplineInterpolation(underlyingClose, _processingDate, symbols, ivs);
+            var interpolation = new IvInterpolation(underlyingClose, _processingDate, data);
 
             using (var writer = new StreamWriter(csvPath))
             {
@@ -118,10 +113,10 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                     if (count >= 2 && decimal.Parse(items[ivIndex]) == 0m)
                     {
                         var symbol = new Symbol(SecurityIdentifier.Parse(items[sidIndex]), items[tickerIndex]);
-                        var newIv = Convert.ToDecimal(cubicSpline.GetInterpolatedIv(symbol.ID.StrikePrice, symbol.ID.Date));
+                        var newIv = Convert.ToDecimal(interpolation.GetInterpolatedIv(symbol.ID.StrikePrice, symbol.ID.Date));
                         items[ivIndex] = $"{newIv}";
 
-                        var greeks = cubicSpline.GetUpdatedGreeks(symbol, newIv);
+                        var greeks = interpolation.GetUpdatedGreeks(symbol, newIv);
                         items[ivIndex + 1] = $"{greeks.Delta}";
                         items[ivIndex + 2] = $"{greeks.Gamma}";
                         items[ivIndex + 3] = $"{greeks.Vega}";
