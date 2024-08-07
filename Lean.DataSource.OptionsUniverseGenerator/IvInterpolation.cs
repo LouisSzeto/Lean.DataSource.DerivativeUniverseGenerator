@@ -80,35 +80,20 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
             return Convert.ToDecimal(Brent.FindRoot(f, 1e-7d, 4.0d, 1e-4d, 100));
         }
 
-        public Greeks GetUpdatedGreeks(Symbol option, decimal polatedIv)
+        public Greeks GetUpdatedGreeks(Symbol option, decimal polatedIv, OptionPricingModelType? optionModel = null, OptionPricingModelType? ivModel = null)
         {
-            var mirrorOption = OptionsUniverseGeneratorUtils.GetMirrorOptionSymbol(option);
-            var greeks = new OptionUniverseEntry.GreeksIndicators(option, mirrorOption);
+            var greeks = new OptionUniverseEntry.GreeksIndicators(option, null, optionModel, ivModel);
 
             var ttm = Convert.ToDecimal((option.ID.Date - _currentDate).TotalDays / 365d);
             var interest = greeks.InterestRate;
             var dividend = greeks.DividendYield;
-
-            var optionPrice = 0m;
-            var mirrorOptionPrice = 0m;
-            if (option.ID.OptionStyle == OptionStyle.American)
-            {
-                optionPrice = OptionGreekIndicatorsHelper.ForwardTreeTheoreticalPrice(polatedIv, _underlyingPrice, option.ID.StrikePrice, ttm,
-                    interest, dividend, option.ID.OptionRight);
-                mirrorOptionPrice = OptionGreekIndicatorsHelper.ForwardTreeTheoreticalPrice(polatedIv, _underlyingPrice, mirrorOption.ID.StrikePrice, ttm,
-                    interest, dividend, mirrorOption.ID.OptionRight);
-            }
-            else
-            {
-                optionPrice = OptionGreekIndicatorsHelper.BlackTheoreticalPrice(polatedIv, _underlyingPrice, option.ID.StrikePrice, ttm,
-                    interest, dividend, option.ID.OptionRight);
-                mirrorOptionPrice = OptionGreekIndicatorsHelper.BlackTheoreticalPrice(polatedIv, _underlyingPrice, mirrorOption.ID.StrikePrice, ttm,
-                    interest, dividend, mirrorOption.ID.OptionRight);
-            }
+            
+            // Use BSM for speed
+            var optionPrice = OptionGreekIndicatorsHelper.BlackTheoreticalPrice(polatedIv, _underlyingPrice, option.ID.StrikePrice, ttm,
+                interest, dividend, option.ID.OptionRight);
 
             greeks.Update(new IndicatorDataPoint(option.Underlying, _currentDate, _underlyingPrice));
             greeks.Update(new IndicatorDataPoint(option, _currentDate, optionPrice));
-            greeks.Update(new IndicatorDataPoint(mirrorOption, _currentDate, mirrorOptionPrice));
 
             return greeks.GetGreeks();
         }

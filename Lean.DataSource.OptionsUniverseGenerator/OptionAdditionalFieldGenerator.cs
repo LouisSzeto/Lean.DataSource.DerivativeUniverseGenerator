@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using QuantConnect.Indicators;
 using QuantConnect.Logging;
 using System;
 using System.Collections.Generic;
@@ -116,12 +117,13 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                         var newIv = Convert.ToDecimal(interpolation.GetInterpolatedIv(symbol.ID.StrikePrice, symbol.ID.Date));
                         items[ivIndex] = $"{newIv}";
 
-                        var greeks = interpolation.GetUpdatedGreeks(symbol, newIv);
+                        var greeks = interpolation.GetUpdatedGreeks(symbol, newIv, OptionPricingModelType.BlackScholes, OptionPricingModelType.BlackScholes);
                         items[ivIndex + 1] = $"{greeks.Delta}";
                         items[ivIndex + 2] = $"{greeks.Gamma}";
-                        items[ivIndex + 3] = $"{greeks.Vega}";
-                        items[ivIndex + 4] = $"{greeks.Theta}";
-                        items[ivIndex + 5] = $"{greeks.Rho}";
+                        // validate the direction of some greeks
+                        items[ivIndex + 3] = $"{Math.Max(0m, greeks.Vega)}";
+                        items[ivIndex + 4] = $"{Math.Min(0m, greeks.Theta)}";
+                        items[ivIndex + 5] = $"{Math.Max(0m, greeks.Rho)}";
                     }
 
                     writer.WriteLine(string.Join(',', items));
