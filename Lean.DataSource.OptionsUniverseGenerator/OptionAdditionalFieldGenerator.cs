@@ -123,7 +123,7 @@ namespace QuantConnect.DataSource.OptionsUniverseGenerator
                         // validate the direction of some greeks
                         items[ivIndex + 3] = $"{Math.Max(0m, greeks.Vega)}";
                         items[ivIndex + 4] = $"{Math.Min(0m, greeks.Theta)}";
-                        items[ivIndex + 5] = $"{Math.Max(0m, greeks.Rho)}";
+                        items[ivIndex + 5] = $"{greeks.Rho}";
                     }
 
                     writer.WriteLine(string.Join(',', items));
